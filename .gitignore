@@ -10,3 +10,7 @@ pnpm-debug.log*
 !.env.example
 .idea/
 .vscode/
+
+# 本机工具留下的标记文件，不属于仓库
+.v2c/
+.video_agent/

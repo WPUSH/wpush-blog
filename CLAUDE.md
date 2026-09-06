@@ -1,6 +1,6 @@
 # wpush-blog
 
-WPush 内容站（接入教程 / 解决方案 / 文章），Astro 5 静态站，产物托管 EdgeOne Pages，经 EdgeOne 规则引擎映射为 `wpush.cn/blog`。部署细节见 README「部署」。
+WPush 内容站（接入教程 / 解决方案 / 文章），Astro 5 静态站，产物托管 EdgeOne Pages，经 EdgeOne 规则引擎映射为 `wpush.cn/blog`。本仓库公开：EdgeOne 规则、同步令牌与密钥仓库等运维细节只写在私有主仓库 `wpush-go/docs/18-blog-site.md`，不要写进这里的 README。
 
 ## 写内容时
 
@@ -12,7 +12,7 @@ WPush 内容站（接入教程 / 解决方案 / 文章），Astro 5 静态站，
 
 ## 仓库同步
 
-GitHub `WPUSH/wpush-blog` 与 CNB `wpush/wpush-blog` 双向镜像，`scripts/mirror-push.sh` 被 `.cnb.yml` 与 `.github/workflows/sync-to-cnb.yml` 共用。不要给它加 `--force`/`--mirror`，不要把令牌拼进 URL；细节见 README「双向同步」。
+GitHub `WPUSH/wpush-blog` 与 CNB `wpush/wpush-blog` 双向镜像，`scripts/mirror-push.sh` 被 `.cnb.yml` 与 `.github/workflows/sync-to-cnb.yml` 共用。不要给它加 `--force`/`--mirror`，不要把令牌拼进 URL；凭据与接入步骤见主仓库 `docs/18-blog-site.md`。
 
 ## 写代码时
 
