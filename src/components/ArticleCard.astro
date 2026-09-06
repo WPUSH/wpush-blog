@@ -1,0 +1,35 @@
+---
+import type { Entry } from "@/lib/content";
+import { entryPath, formatDate, KINDS } from "@/lib/content";
+import { href } from "@/lib/url";
+import { CHANNEL_META } from "@/lib/site";
+
+interface Props {
+  entry: Entry;
+  /** 列表已经按类型分组时不再显示类型标签 */
+  showKind?: boolean;
+}
+const { entry, showKind = true } = Astro.props;
+const channel = entry.collection === "tutorials" ? entry.data.channel : undefined;
+const scene = entry.collection === "solutions" ? entry.data.scene : undefined;
+---
+
+<article class="group relative flex flex-col gap-2 rounded-lg border p-5 transition-colors hover:bg-muted">
+  <div class="flex items-center gap-2 text-xs text-muted-foreground">
+    {showKind && <span>{KINDS[entry.collection].label}</span>}
+    {channel && CHANNEL_META[channel] && (
+      <span class="inline-flex items-center gap-1.5">
+        <i class="inline-block h-2 w-2 rounded-full" style={`background:${CHANNEL_META[channel].color}`}></i>
+        {CHANNEL_META[channel].label}
+      </span>
+    )}
+    {scene && <span class="rounded bg-secondary px-1.5 py-0.5">{scene}</span>}
+    <time datetime={entry.data.publishDate.toISOString()} class="ml-auto">{formatDate(entry.data.publishDate)}</time>
+  </div>
+  <h3 class="text-base font-semibold leading-snug tracking-tight">
+    <a href={href(entryPath(entry))} class="focus-ring rounded after:absolute after:inset-0">
+      {entry.data.title}
+    </a>
+  </h3>
+  <p class="line-clamp-2 text-sm leading-relaxed text-muted-foreground">{entry.data.description}</p>
+</article>

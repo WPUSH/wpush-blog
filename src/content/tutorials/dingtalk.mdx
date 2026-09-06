@@ -1,0 +1,90 @@
+---
+title: "钉钉群机器人接入 WPush：把告警和通知直接发进钉钉群"
+description: "三步完成钉钉自定义机器人与 WPush 的绑定：创建加签机器人、在控制台填入 Webhook 与密钥、用一条 curl 验证。附常见拒收原因与排查方法。"
+publishDate: 2026-09-07
+channel: dingtalk
+difficulty: 入门
+order: 10
+tags: ["钉钉", "渠道接入", "群机器人"]
+---
+
+import Callout from "@/components/Callout.astro";
+
+钉钉群机器人是团队接收告警和业务通知最省事的渠道之一：不用装 App，消息直接进群，所有人都能看到。接入 WPush 之后，你只需要在原来调用 WPush 的地方把 `channel` 换成 `dingtalk`，或者追加进渠道列表，消息就会同时进群。
+
+整个过程三步，五分钟以内。
+
+## 1. 在钉钉群里创建自定义机器人
+
+1. 打开目标钉钉群，进入「群设置」→「智能群助手」→「添加机器人」；
+2. 选择**自定义机器人**，填写名称与头像；
+3. 安全设置选择**「加签」**，复制生成的密钥（以 `SEC` 开头）；
+4. 创建完成后复制 Webhook 地址。
+
+<Callout type="warn">
+安全设置请选「加签」，不要选「自定义关键词」。关键词模式下钉钉要求每条消息正文包含指定词，标题里没有关键词的消息会被钉钉直接拒收，而 WPush 侧看到的是投递成功。
+</Callout>
+
+## 2. 在 WPush 控制台绑定
+
+登录 WPush，进入「渠道」页找到钉钉机器人：
+
+1. 填入上一步的 Webhook 地址与加签密钥；
+2. 点「测试」，钉钉群应立刻收到一条测试消息；
+3. 点「保存」。
+
+加签所需的时间戳与签名由 WPush 在发送时自动计算并附加，你不需要在自己的代码里处理。
+
+## 3. 发一条消息验证
+
+```bash
+curl -X POST 'https://api.wpush.cn/api/v1/send' \
+  -d 'apikey=WPUSH_你的APIKey' \
+  -d 'title=渠道测试' \
+  -d 'content=如果你看到这条消息，钉钉渠道已接通' \
+  -d 'channel=dingtalk'
+```
+
+返回消息 ID 即为受理成功：
+
+```json
+{"code":0,"message":"success","data":"1126950958891274240","success":true}
+```
+
+消息以 Markdown 形式发到群内，标题作为消息标题，正文支持加粗、列表、链接等基础语法。
+
+## 同时发到多个渠道
+
+`channel` 支持逗号分隔。下面这条会同时进钉钉群并推到你的微信：
+
+```bash
+curl -X POST 'https://api.wpush.cn/api/v1/send' \
+  -d 'apikey=WPUSH_你的APIKey' \
+  -d 'title=数据库主从延迟超过 30s' \
+  -d 'content=实例 **db-prod-01**，当前延迟 42s，请检查 binlog 同步' \
+  -d 'channel=dingtalk,wechat'
+```
+
+## 查询投递结果
+
+用返回的消息 ID 查询：
+
+```bash
+curl -X POST 'https://api.wpush.cn/api/v1/query' \
+  -d 'apikey=WPUSH_你的APIKey' \
+  -d 'id=1126950958891274240'
+```
+
+`status` 为 `0` 处理中、`1` 成功、`2` 失败。
+
+## 常见问题
+
+**测试通过，正式消息却没进群。** 先确认安全设置是「加签」而不是「关键词」。如果机器人被移出群或 Webhook 被重置，需要在「渠道」页重新填入新的地址与密钥。
+
+**群里收到的内容格式乱了。** 钉钉 Markdown 支持的语法有限，表格、任务列表、HTML 标签不会被渲染。告警类消息建议用加粗和无序列表，避免嵌套结构。
+
+**想区分不同项目的消息。** 为每个项目建独立的群和机器人，在 WPush 里用不同账号或主题区分；或者统一进一个群，在标题里加项目前缀。
+
+<Callout>
+渠道特性与计费规则见主站的[渠道说明](https://wpush.cn/docs/channels/)，其余渠道的接入步骤见[渠道对接](https://wpush.cn/docs/channel-setup/)。
+</Callout>

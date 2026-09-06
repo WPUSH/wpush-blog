@@ -1,0 +1,22 @@
+---
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import Breadcrumbs from "@/components/Breadcrumbs.astro";
+import { getTagIndex } from "@/lib/content";
+import { href } from "@/lib/url";
+
+const tags = await getTagIndex();
+---
+
+<BaseLayout title="标签" description="按标签浏览 WPush 博客的全部教程、解决方案与文章。" noindex>
+  <div class="mx-auto max-w-6xl px-4 pt-10 sm:px-6">
+    <Breadcrumbs items={[{ name: "博客", path: "/" }, { name: "标签" }]} />
+    <h1 class="mt-6 text-3xl font-semibold tracking-tight">标签</h1>
+    <div class="mt-8 flex flex-wrap gap-2">
+      {[...tags.entries()].map(([tag, list]) => (
+        <a href={href(`/tags/${tag}`)} class="rounded-full border px-3 py-1 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
+          #{tag} <span class="text-xs">{list.length}</span>
+        </a>
+      ))}
+    </div>
+  </div>
+</BaseLayout>

@@ -1,0 +1,22 @@
+---
+import { href } from "@/lib/url";
+interface Props {
+  items: { name: string; path?: string }[];
+}
+const { items } = Astro.props;
+---
+
+<nav aria-label="面包屑" class="text-xs text-muted-foreground">
+  <ol class="flex flex-wrap items-center gap-1.5">
+    {items.map((it, i) => (
+      <li class="flex items-center gap-1.5">
+        {i > 0 && <span aria-hidden="true">/</span>}
+        {it.path ? (
+          <a href={href(it.path)} class="hover:text-foreground">{it.name}</a>
+        ) : (
+          <span aria-current="page" class="text-foreground">{it.name}</span>
+        )}
+      </li>
+    ))}
+  </ol>
+</nav>

@@ -1,0 +1,139 @@
+---
+title: "服务器告警推送到微信和钉钉：用 WPush 十分钟搭一套通知链路"
+description: "不部署监控平台也能收到服务器告警。用 shell 脚本加 crontab 检查磁盘、内存与服务存活，异常时通过 WPush 一次调用同时推到微信和钉钉群，附完整脚本与去重思路。"
+publishDate: 2026-09-07
+scene: 服务器告警
+audience: 运维 / 独立开发者
+tags: ["服务器告警", "crontab", "微信", "钉钉"]
+faq:
+  - q: 一定要部署 Prometheus 或 Zabbix 才能用 WPush 发告警吗？
+    a: 不需要。任何能发 HTTP 请求的地方都可以调用 WPush，一段 shell 脚本配 crontab 就够用。已有监控平台的话，把它的 Webhook 通知指向 WPush 即可。
+  - q: 同一个告警会不会反复推送？
+    a: 取决于你的脚本。文中的示例用一个状态文件记录上次告警时间，同一指标在冷却期内不再重复推送，恢复时再推一条恢复通知。
+  - q: 告警可以同时发到多个渠道吗？
+    a: 可以。channel 参数支持逗号分隔，比如 wechat,dingtalk 会同时推到微信和钉钉群，只需一次调用。
+---
+
+import Callout from "@/components/Callout.astro";
+
+小团队和独立开发者的服务器告警需求通常很朴素：磁盘快满、内存吃紧、关键进程挂了，第一时间在微信里收到一条通知，顺便让钉钉群里的同事也看到。为此专门部署一套监控平台，维护成本往往高于收益。
+
+这篇解决方案用最少的组件把链路搭起来：一段 shell 脚本负责检查，crontab 负责定时，WPush 负责把消息送到微信和钉钉。
+
+## 准备
+
+1. 注册 WPush，在「设置」页拿到 API Key；
+2. 在「渠道」页扫码绑定微信；如需进钉钉群，参考[钉钉群机器人接入教程](/blog/tutorials/dingtalk/)完成绑定；
+3. 服务器上有 `curl`。
+
+## 发送函数
+
+把 WPush 调用封装成一个函数，后面所有检查项共用：
+
+```bash
+#!/usr/bin/env bash
+set -u
+
+WPUSH_KEY="WPUSH_你的APIKey"
+CHANNELS="wechat,dingtalk"
+HOST="$(hostname)"
+
+notify() {
+  local title="$1" content="$2"
+  curl -sS -X POST 'https://api.wpush.cn/api/v1/send' \
+    --data-urlencode "apikey=${WPUSH_KEY}" \
+    --data-urlencode "title=${title}" \
+    --data-urlencode "content=${content}" \
+    --data-urlencode "channel=${CHANNELS}" >/dev/null
+}
+```
+
+<Callout type="warn">
+API Key 不要写进会提交到仓库的脚本。放到 `/etc/wpush.env` 之类的文件里，脚本开头 `source` 进来，并把文件权限设为 600。
+</Callout>
+
+## 检查项
+
+### 磁盘使用率
+
+```bash
+check_disk() {
+  local threshold=85
+  df -P | awk 'NR>1 && $5+0 > '"$threshold"' {print $6" "$5}' | while read -r mount pct; do
+    notify "磁盘告警 · ${HOST}" "挂载点 **${mount}** 使用率 ${pct}，阈值 ${threshold}%"
+  done
+}
+```
+
+### 可用内存
+
+```bash
+check_mem() {
+  local threshold=90
+  local used
+  used=$(free | awk '/Mem:/ {printf "%d", $3/$2*100}')
+  if [ "$used" -gt "$threshold" ]; then
+    notify "内存告警 · ${HOST}" "内存使用率 ${used}%，阈值 ${threshold}%"
+  fi
+}
+```
+
+### 关键进程存活
+
+```bash
+check_proc() {
+  for name in nginx mysqld; do
+    if ! pgrep -x "$name" >/dev/null; then
+      notify "进程异常 · ${HOST}" "**${name}** 未在运行，请立即检查"
+    fi
+  done
+}
+```
+
+## 告警去重
+
+每分钟跑一次检查，磁盘满了之后每分钟都收一条消息是灾难。加一个基于状态文件的冷却期：
+
+```bash
+STATE_DIR=/var/tmp/wpush-alert
+mkdir -p "$STATE_DIR"
+
+# alert_once <key> <title> <content>  同一 key 在 COOLDOWN 秒内只推一次
+COOLDOWN=1800
+alert_once() {
+  local key="$1" title="$2" content="$3"
+  local f="$STATE_DIR/$key" now
+  now=$(date +%s)
+  if [ -f "$f" ] && [ $((now - $(cat "$f"))) -lt "$COOLDOWN" ]; then
+    return
+  fi
+  echo "$now" > "$f"
+  notify "$title" "$content"
+}
+
+# 恢复时清掉状态并推一条恢复通知
+recover() {
+  local key="$1" title="$2"
+  if [ -f "$STATE_DIR/$key" ]; then
+    rm -f "$STATE_DIR/$key"
+    notify "$title" "指标已恢复正常"
+  fi
+}
+```
+
+把前面检查项里的 `notify` 换成 `alert_once "disk_${mount//\//_}" ...`，并在指标正常的分支调用 `recover`，就有了完整的告警与恢复闭环。
+
+## 定时执行
+
+```bash
+chmod +x /usr/local/bin/wpush-check.sh
+echo '* * * * * root /usr/local/bin/wpush-check.sh' > /etc/cron.d/wpush-check
+```
+
+## 已有监控平台怎么接
+
+如果你已经在用 Prometheus Alertmanager、Grafana、Uptime Kuma 等工具，不需要写脚本：它们都支持 Webhook 通知，把通知地址指向一个转发到 WPush 的小服务即可。WPush 的 Webhook 渠道方向相反，是 WPush 把消息推给你，二者不要混淆。
+
+## 效果
+
+微信会收到一条模板消息，点开可见完整 Markdown 正文；钉钉群里同时出现同一条消息。用返回的消息 ID 调 `query` 接口可以核对每个渠道的投递状态。

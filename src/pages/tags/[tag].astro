@@ -1,0 +1,24 @@
+---
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import ArticleCard from "@/components/ArticleCard.astro";
+import Breadcrumbs from "@/components/Breadcrumbs.astro";
+import { getTagIndex, type Entry } from "@/lib/content";
+
+export async function getStaticPaths() {
+  const tags = await getTagIndex();
+  return [...tags.entries()].map(([tag, entries]) => ({ params: { tag }, props: { entries } }));
+}
+
+const { tag } = Astro.params;
+const entries = Astro.props.entries as Entry[];
+---
+
+<BaseLayout title={`标签：${tag}`} description={`WPush 博客中标记为「${tag}」的教程、解决方案与文章，共 ${entries.length} 篇。`}>
+  <div class="mx-auto max-w-6xl px-4 pt-10 sm:px-6">
+    <Breadcrumbs items={[{ name: "博客", path: "/" }, { name: "标签", path: "/tags" }, { name: `#${tag}` }]} />
+    <h1 class="mt-6 text-3xl font-semibold tracking-tight">#{tag}</h1>
+    <div class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {entries.map((e) => <ArticleCard entry={e} />)}
+    </div>
+  </div>
+</BaseLayout>

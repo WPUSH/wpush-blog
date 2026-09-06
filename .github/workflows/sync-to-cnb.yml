@@ -1,0 +1,54 @@
+# GitHub → CNB 镜像同步。反向（CNB → GitHub）在 .cnb.yml。两侧都是 scripts/mirror-push.sh 的 fast-forward 幂等推送：
+# CNB 推过来的提交会触发本 workflow，但推回去时 CNB 上已是同一提交，git 输出 Everything up-to-date，不会再触发 CNB。
+#
+# 仓库 Secrets：
+#   CNB_SYNC_TOKEN  CNB 访问令牌（个人设置 → 访问令牌），需对 wpush/wpush-blog 有代码读写权限
+#   WPUSH_API_KEY   可选，失败时经 WPush 通知
+name: sync-to-cnb
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["**"]
+  schedule:
+    - cron: "23 20 * * *" # 北京时间 04:23，每日兜底
+  workflow_dispatch:
+
+concurrency:
+  group: sync-to-cnb
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/mirror-push.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Mirror push to CNB
+        env:
+          SOURCE_URL: https://github.com/${{ github.repository }}
+          SOURCE_AUTH: x-access-token:${{ github.token }}
+          TARGET_URL: https://cnb.cool/wpush/wpush-blog
+          TARGET_AUTH: cnb:${{ secrets.CNB_SYNC_TOKEN }}
+        run: bash scripts/mirror-push.sh
+
+      - name: Notify via WPush on failure
+        if: failure()
+        env:
+          WPUSH_API_KEY: ${{ secrets.WPUSH_API_KEY }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REF: ${{ github.ref_name }}
+        run: |
+          [ -n "$WPUSH_API_KEY" ] || { echo "WPUSH_API_KEY 未配置，跳过通知"; exit 0; }
+          curl -sS -X POST 'https://api.wpush.cn/api/v1/send' \
+            --data-urlencode "apikey=${WPUSH_API_KEY}" \
+            --data-urlencode "title=wpush-blog 同步到 CNB 失败" \
+            --data-urlencode "content=分支/标签 **${REF}** 推送到 cnb.cool/wpush/wpush-blog 失败，多半是两侧分叉（non-fast-forward）。请拉取两侧合并后重推。[查看日志](${RUN_URL})" \
+            --data-urlencode "url=${RUN_URL}"

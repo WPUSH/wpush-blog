@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.astro/
+.DS_Store
+**/.DS_Store
+npm-debug.log*
+pnpm-debug.log*
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/

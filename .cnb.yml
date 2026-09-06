@@ -1,0 +1,60 @@
+# CNB 流水线（docs: https://docs.cnb.cool）。仓库同时托管在 CNB（wpush/wpush-blog）与 GitHub（WPUSH/wpush-blog），双向同步：
+#   CNB → GitHub：本文件的 sync-to-github（push / tag_push 触发，另加每日一次兜底）
+#   GitHub → CNB：.github/workflows/sync-to-cnb.yml
+# 两侧都是 scripts/mirror-push.sh 的 fast-forward 幂等推送，不会互相触发循环；分叉时推送失败并经 WPush 报警，人工合并。
+#
+# 密钥：https://cnb.cool/anhao/secrets/-/blob/main/wpush-blog.yml，须声明
+#   GITHUB_SYNC_TOKEN  GitHub fine-grained PAT，仓库 WPUSH/wpush-blog，权限 Contents: Read and write
+#   WPUSH_API_KEY      流水线结果通知
+#   allow_slugs 含 wpush/wpush-blog；allow_events 含 push、tag_push、crontab。示例见 README「双向同步」。
+
+.build: &build
+  name: build
+  docker:
+    image: node:22
+  env:
+    npm_config_registry: https://registry.npmmirror.com
+  stages:
+    - name: install
+      script: npm i -g pnpm@10 && pnpm install --frozen-lockfile
+    - name: build & check
+      script: pnpm build && pnpm check
+
+.sync: &sync-to-github
+  name: sync-to-github
+  docker:
+    image: alpine/git
+  imports:
+    - https://cnb.cool/anhao/secrets/-/blob/main/wpush-blog.yml
+  env:
+    SOURCE_URL: https://cnb.cool/${CNB_REPO_SLUG}
+    TARGET_URL: https://github.com/WPUSH/wpush-blog
+  lock:
+    key: sync-to-github
+    wait: true
+  stages:
+    - name: mirror push
+      script: |
+        apk add --no-cache bash >/dev/null
+        SOURCE_AUTH="cnb:${CNB_TOKEN}" TARGET_AUTH="x-access-token:${GITHUB_SYNC_TOKEN}" bash scripts/mirror-push.sh
+  failStages:
+    - name: 同步失败通知
+      image: docker.cnb.cool/wpush/wpush-message
+      settings:
+        apikey: $WPUSH_API_KEY
+        status: auto
+
+# 所有分支：先构建检查，再镜像到 GitHub（两条并行流水线，互不阻塞）
+"**":
+  push:
+    - *build
+    - *sync-to-github
+
+$:
+  tag_push:
+    - *sync-to-github
+
+main:
+  # 每日兜底：webhook 漏发或同步流水线被跳过时，第二天追平（定时任务只能配具体分支）
+  "crontab: 17 4 * * *":
+    - *sync-to-github

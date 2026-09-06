@@ -1,0 +1,35 @@
+---
+/** 三类内容的列表页共用：标题区 + 卡片网格。 */
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import ArticleCard from "@/components/ArticleCard.astro";
+import Breadcrumbs from "@/components/Breadcrumbs.astro";
+import { getPublished, KINDS, type Kind } from "@/lib/content";
+import { breadcrumbs } from "@/lib/jsonld";
+
+interface Props {
+  kind: Kind;
+}
+const { kind } = Astro.props;
+const meta = KINDS[kind];
+const entries = await getPublished(kind);
+---
+
+<BaseLayout
+  title={meta.label}
+  description={meta.description}
+  jsonld={[breadcrumbs([{ name: "博客", path: "/" }, { name: meta.label, path: `/${kind}` }])]}
+>
+  <div class="mx-auto max-w-6xl px-4 pt-10 sm:px-6">
+    <Breadcrumbs items={[{ name: "博客", path: "/" }, { name: meta.label }]} />
+    <h1 class="mt-6 text-3xl font-semibold tracking-tight">{meta.label}</h1>
+    <p class="mt-3 max-w-2xl text-muted-foreground">{meta.description}</p>
+
+    {entries.length === 0 ? (
+      <p class="mt-12 text-sm text-muted-foreground">内容整理中，稍后再来。</p>
+    ) : (
+      <div class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {entries.map((e) => <ArticleCard entry={e} showKind={false} />)}
+      </div>
+    )}
+  </div>
+</BaseLayout>

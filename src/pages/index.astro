@@ -1,0 +1,53 @@
+---
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import ArticleCard from "@/components/ArticleCard.astro";
+import { getAllPublished, getPublished, KINDS, KIND_ORDER } from "@/lib/content";
+import { href } from "@/lib/url";
+import { SITE } from "@/lib/site";
+
+const latest = (await getAllPublished()).slice(0, 6);
+const sections = await Promise.all(
+  KIND_ORDER.map(async (k) => ({ kind: k, meta: KINDS[k], entries: (await getPublished(k)).slice(0, 3) })),
+);
+---
+
+<BaseLayout title={SITE.name} description={SITE.description}>
+  <section class="mx-auto max-w-6xl px-4 pt-16 sm:px-6">
+    <h1 class="max-w-2xl text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
+      把消息推到该去的地方
+    </h1>
+    <p class="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
+      WPush 的接入教程、解决方案与实践文章。从服务器告警到 AI Agent 通知，一次 API 调用送达微信、钉钉、飞书、邮件与更多渠道。
+    </p>
+    <div class="mt-8 flex flex-wrap gap-3 text-sm">
+      <a href={href("/tutorials")} class="focus-ring rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground hover:opacity-90">
+        从接入教程开始
+      </a>
+      <a href={SITE.links.docs} class="focus-ring rounded-md border px-4 py-2 hover:bg-secondary">API 参考</a>
+    </div>
+  </section>
+
+  {latest.length > 0 && (
+    <section class="mx-auto mt-20 max-w-6xl px-4 sm:px-6">
+      <h2 class="text-lg font-semibold tracking-tight">最新</h2>
+      <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {latest.map((e) => <ArticleCard entry={e} />)}
+      </div>
+    </section>
+  )}
+
+  {sections.map(({ kind, meta, entries }) => entries.length > 0 && (
+    <section class="mx-auto mt-20 max-w-6xl px-4 sm:px-6">
+      <div class="flex items-baseline justify-between gap-4">
+        <div>
+          <h2 class="text-lg font-semibold tracking-tight">{meta.label}</h2>
+          <p class="mt-1 text-sm text-muted-foreground">{meta.description}</p>
+        </div>
+        <a href={href(`/${kind}`)} class="shrink-0 text-sm text-muted-foreground hover:text-foreground">全部 →</a>
+      </div>
+      <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {entries.map((e) => <ArticleCard entry={e} showKind={false} />)}
+      </div>
+    </section>
+  ))}
+</BaseLayout>

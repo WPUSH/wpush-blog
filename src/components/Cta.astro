@@ -1,0 +1,21 @@
+---
+import { SITE } from "@/lib/site";
+---
+
+<section class="not-prose mt-12 rounded-xl border bg-muted p-6 sm:p-8">
+  <h2 class="text-lg font-semibold tracking-tight">现在就把第一条消息推出去</h2>
+  <p class="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
+    注册 WPush，扫码绑定微信即可收到推送。一次 API 调用同时送达 10 个渠道，内置 MCP Server 与 Agent Skill。
+  </p>
+  <div class="mt-5 flex flex-wrap gap-3 text-sm">
+    <a
+      href={SITE.links.login}
+      class="focus-ring rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground hover:opacity-90"
+    >
+      免费注册
+    </a>
+    <a href={SITE.links.docs} class="focus-ring rounded-md border bg-background px-4 py-2 hover:bg-secondary">
+      查看 API 参考
+    </a>
+  </div>
+</section>

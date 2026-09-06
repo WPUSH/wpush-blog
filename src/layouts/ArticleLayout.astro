@@ -1,0 +1,126 @@
+---
+import type { MarkdownHeading } from "astro";
+import BaseLayout from "./BaseLayout.astro";
+import Toc from "@/components/Toc.astro";
+import Breadcrumbs from "@/components/Breadcrumbs.astro";
+import ArticleCard from "@/components/ArticleCard.astro";
+import Cta from "@/components/Cta.astro";
+import { article, breadcrumbs, faqPage } from "@/lib/jsonld";
+import { entryMarkdownPath, formatDate, getRelated, KINDS, type Entry } from "@/lib/content";
+import { href } from "@/lib/url";
+import { CHANNEL_META } from "@/lib/site";
+
+interface Props {
+  entry: Entry;
+  headings: MarkdownHeading[];
+}
+const { entry, headings } = Astro.props;
+const kind = KINDS[entry.collection];
+const related = await getRelated(entry);
+const faq = entry.collection === "solutions" ? entry.data.faq : [];
+const channel = entry.collection === "tutorials" ? entry.data.channel : undefined;
+
+const jsonld: Record<string, unknown>[] = [
+  article(entry, Astro.url.pathname),
+  breadcrumbs([
+    { name: "博客", path: "/" },
+    { name: kind.label, path: `/${entry.collection}` },
+    { name: entry.data.title, path: `/${entry.collection}/${entry.id}` },
+  ]),
+];
+if (faq.length) jsonld.push(faqPage(faq));
+---
+
+<BaseLayout
+  title={entry.data.title}
+  description={entry.data.description}
+  type="article"
+  image={entry.data.cover}
+  publishDate={entry.data.publishDate}
+  updatedDate={entry.data.updatedDate}
+  tags={entry.data.tags}
+  markdownPath={entryMarkdownPath(entry)}
+  noindex={entry.data.draft}
+  jsonld={jsonld}
+>
+  <div class="mx-auto max-w-6xl px-4 pt-10 sm:px-6">
+    <Breadcrumbs
+      items={[
+        { name: "博客", path: "/" },
+        { name: kind.label, path: `/${entry.collection}` },
+        { name: entry.data.title },
+      ]}
+    />
+
+    <header class="mt-6 max-w-3xl">
+      <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span>{kind.label}</span>
+        {channel && CHANNEL_META[channel] && (
+          <span class="inline-flex items-center gap-1.5">
+            <i class="inline-block h-2 w-2 rounded-full" style={`background:${CHANNEL_META[channel].color}`}></i>
+            {CHANNEL_META[channel].label}
+          </span>
+        )}
+        {entry.collection === "tutorials" && <span class="rounded bg-secondary px-1.5 py-0.5">{entry.data.difficulty}</span>}
+        {entry.collection === "solutions" && <span class="rounded bg-secondary px-1.5 py-0.5">{entry.data.scene}</span>}
+        {entry.data.draft && <span class="rounded bg-warning/10 px-1.5 py-0.5 text-warning">草稿</span>}
+      </div>
+      <h1 class="mt-3 text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">{entry.data.title}</h1>
+      <p class="mt-4 text-base leading-relaxed text-muted-foreground">{entry.data.description}</p>
+      <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span>发布于 <time datetime={entry.data.publishDate.toISOString()}>{formatDate(entry.data.publishDate)}</time></span>
+        {entry.data.updatedDate && (
+          <span>更新于 <time datetime={entry.data.updatedDate.toISOString()}>{formatDate(entry.data.updatedDate)}</time></span>
+        )}
+        <a href={href(entryMarkdownPath(entry))} class="hover:text-foreground" title="纯 Markdown 版本，便于 AI 工具直接读取">
+          Markdown 版本
+        </a>
+      </div>
+    </header>
+
+    <div class="mt-10 grid gap-12 lg:grid-cols-[minmax(0,1fr)_220px]">
+      <article class="prose prose-neutral max-w-3xl">
+        <slot />
+
+        {faq.length > 0 && (
+          <section>
+            <h2 id="faq">常见问题</h2>
+            {faq.map((f) => (
+              <details class="not-prose mb-2 rounded-lg border px-4 py-3">
+                <summary class="cursor-pointer text-sm font-medium">{f.q}</summary>
+                <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{f.a}</p>
+              </details>
+            ))}
+          </section>
+        )}
+
+        {entry.data.tags.length > 0 && (
+          <div class="not-prose mt-10 flex flex-wrap gap-2">
+            {entry.data.tags.map((t) => (
+              <a href={href(`/tags/${t}`)} class="rounded-full border px-3 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground">
+                #{t}
+              </a>
+            ))}
+          </div>
+        )}
+
+        <Cta />
+      </article>
+
+      <aside class="hidden lg:block">
+        <div class="sticky top-20 space-y-8">
+          <Toc headings={headings} />
+        </div>
+      </aside>
+    </div>
+
+    {related.length > 0 && (
+      <section class="mt-20 max-w-3xl">
+        <h2 class="text-lg font-semibold tracking-tight">相关{kind.label}</h2>
+        <div class="mt-4 grid gap-4 sm:grid-cols-2">
+          {related.map((r) => <ArticleCard entry={r} showKind={false} />)}
+        </div>
+      </section>
+    )}
+  </div>
+</BaseLayout>

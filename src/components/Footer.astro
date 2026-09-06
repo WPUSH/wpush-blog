@@ -1,0 +1,43 @@
+---
+import { SITE } from "@/lib/site";
+import { href } from "@/lib/url";
+import { KINDS, KIND_ORDER } from "@/lib/content";
+const year = new Date().getFullYear();
+---
+
+<footer class="mt-24 border-t">
+  <div class="mx-auto grid max-w-6xl gap-10 px-4 py-12 text-sm sm:px-6 md:grid-cols-4">
+    <div class="md:col-span-2">
+      <div class="flex items-center gap-2">
+        <img src={href("/logo.png")} alt="" width="20" height="20" class="h-5 w-5 rounded" />
+        <span class="font-semibold">WPush</span>
+      </div>
+      <p class="mt-3 max-w-sm leading-relaxed text-muted-foreground">
+        一个 API，消息送达每个渠道。微信公众号、短信、邮件、App、Webhook、钉钉、飞书、企业微信、微信 ClawBot、QQ 机器人，共 10 个渠道。
+      </p>
+    </div>
+    <div>
+      <div class="font-medium">内容</div>
+      <ul class="mt-3 space-y-2 text-muted-foreground">
+        {KIND_ORDER.map((k) => (
+          <li><a class="hover:text-foreground" href={href(`/${k}`)}>{KINDS[k].label}</a></li>
+        ))}
+        <li><a class="hover:text-foreground" href={href("/tags")}>标签</a></li>
+        <li><a class="hover:text-foreground" href={href("/rss.xml")}>RSS</a></li>
+      </ul>
+    </div>
+    <div>
+      <div class="font-medium">产品</div>
+      <ul class="mt-3 space-y-2 text-muted-foreground">
+        <li><a class="hover:text-foreground" href={SITE.links.home}>官网</a></li>
+        <li><a class="hover:text-foreground" href={SITE.links.docs}>文档与 API 参考</a></li>
+        <li><a class="hover:text-foreground" href={SITE.links.channels}>渠道说明</a></li>
+        <li><a class="hover:text-foreground" href={SITE.links.github} rel="noopener">GitHub</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 border-t px-4 py-5 text-xs text-muted-foreground sm:px-6">
+    <span>© {year} WPush</span>
+    <a class="hover:text-foreground" href="https://beian.miit.gov.cn/" rel="noopener" target="_blank">{SITE.icp}</a>
+  </div>
+</footer>

@@ -1,0 +1,44 @@
+---
+import "@/styles/global.css";
+import SEO from "@/components/SEO.astro";
+import Header from "@/components/Header.astro";
+import Footer from "@/components/Footer.astro";
+import JsonLd from "@/components/JsonLd.astro";
+import { website } from "@/lib/jsonld";
+import { href } from "@/lib/url";
+import { SITE } from "@/lib/site";
+
+interface Props {
+  title: string;
+  description: string;
+  type?: "website" | "article";
+  image?: string;
+  publishDate?: Date;
+  updatedDate?: Date;
+  tags?: string[];
+  markdownPath?: string;
+  noindex?: boolean;
+  /** 页面级 JSON-LD（WebSite 之外的补充） */
+  jsonld?: Record<string, unknown>[];
+}
+const { jsonld = [], ...seo } = Astro.props;
+---
+
+<!doctype html>
+<html lang={SITE.locale}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" type="image/png" href={href("/favicon.png")} />
+    <link rel="apple-touch-icon" href={href("/apple-touch-icon.png")} />
+    <link rel="sitemap" href={href("/sitemap-index.xml")} />
+    <SEO {...seo} />
+    <JsonLd data={[website(), ...jsonld]} />
+  </head>
+  <body class="min-h-screen flex flex-col">
+    <Header />
+    <main class="flex-1"><slot /></main>
+    <Footer />
+  </body>
+</html>

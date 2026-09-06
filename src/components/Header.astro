@@ -1,0 +1,57 @@
+---
+import { SITE } from "@/lib/site";
+import { href } from "@/lib/url";
+import { KINDS, KIND_ORDER } from "@/lib/content";
+
+const path = Astro.url.pathname;
+const isActive = (p: string) => path.startsWith(href(p));
+---
+
+<header class="sticky top-0 z-40 border-b bg-background/85 backdrop-blur">
+  <div class="mx-auto flex h-14 max-w-6xl items-center gap-6 px-4 sm:px-6">
+    <a href={SITE.links.home} class="focus-ring flex items-center gap-2 rounded-md" aria-label="WPush 首页">
+      <img src={href("/logo.png")} alt="" width="24" height="24" class="h-6 w-6 rounded" />
+      <span class="text-sm font-semibold tracking-tight">WPush</span>
+    </a>
+    <a href={href("/")} class="focus-ring -ml-3 rounded-md text-sm text-muted-foreground hover:text-foreground">
+      博客
+    </a>
+
+    <nav class="ml-auto hidden items-center gap-5 text-sm md:flex" aria-label="主导航">
+      {KIND_ORDER.map((k) => (
+        <a
+          href={href(`/${k}`)}
+          class:list={[
+            "focus-ring rounded-md transition-colors hover:text-foreground",
+            isActive(`/${k}`) ? "text-foreground" : "text-muted-foreground",
+          ]}
+          aria-current={isActive(`/${k}`) ? "page" : undefined}
+        >
+          {KINDS[k].label}
+        </a>
+      ))}
+      <a href={SITE.links.docs} class="focus-ring rounded-md text-muted-foreground hover:text-foreground">
+        文档
+      </a>
+      <a
+        href={SITE.links.login}
+        class="focus-ring rounded-md bg-primary px-3 py-1.5 text-primary-foreground transition-opacity hover:opacity-90"
+      >
+        免费使用
+      </a>
+    </nav>
+
+    <details class="relative ml-auto md:hidden">
+      <summary class="focus-ring cursor-pointer list-none rounded-md p-2 text-sm text-muted-foreground" aria-label="菜单">
+        菜单
+      </summary>
+      <nav class="absolute right-0 mt-2 flex w-44 flex-col gap-1 rounded-lg border bg-card p-2 text-sm shadow-sm" aria-label="移动端导航">
+        {KIND_ORDER.map((k) => (
+          <a href={href(`/${k}`)} class="rounded-md px-3 py-2 hover:bg-secondary">{KINDS[k].label}</a>
+        ))}
+        <a href={SITE.links.docs} class="rounded-md px-3 py-2 hover:bg-secondary">文档</a>
+        <a href={SITE.links.login} class="rounded-md px-3 py-2 font-medium hover:bg-secondary">免费使用</a>
+      </nav>
+    </details>
+  </div>
+</header>
