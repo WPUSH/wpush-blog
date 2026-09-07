@@ -1,0 +1,118 @@
+---
+title: "飞书群机器人接入 WPush：把告警和通知直接发进飞书群"
+description: "按最新飞书客户端路径创建自定义机器人，开启签名校验，在 WPush 填入 Webhook 与密钥并用 curl 验证。附多实例 option 与常见拒收排查。"
+publishDate: 2026-09-07
+channel: feishu
+difficulty: 入门
+order: 20
+tags: ["飞书", "渠道接入", "群机器人"]
+---
+
+import Callout from "@/components/Callout.astro";
+
+飞书群机器人适合把运维告警、CI 结果、业务通知直接推到团队群：不用装额外 App，消息进群后所有人都能看到。接入 WPush 之后，把 `channel` 换成 `feishu`（或追加进渠道列表），同一条调用就能进群。
+
+整个过程三步，五分钟以内。菜单文案以飞书客户端当前界面为准。
+
+## 1. 在飞书群里创建自定义机器人
+
+打开目标飞书群，进入「设置」，点「群机器人」：
+
+![飞书群设置里的「群机器人」入口](/blog/tutorials/feishu/01-group-settings.png)
+
+进入群机器人页后点「添加机器人」：
+
+![群机器人页：添加机器人](/blog/tutorials/feishu/02-add-bot.png)
+
+在列表里选择**自定义机器人**（通过 Webhook 把外部服务消息推到飞书）：
+
+![添加机器人：选择自定义机器人](/blog/tutorials/feishu/03-pick-custom-bot.png)
+
+填写机器人名称与描述（例如「WPUSH消息推送」），点「添加」：
+
+![填写自定义机器人名称与描述](/blog/tutorials/feishu/04-bot-profile.png)
+
+创建成功后会看到 **Webhook 地址**。在「安全设置」里勾选**「签名校验」**，复制密钥；再复制 Webhook 地址，点「完成」。
+
+![复制 Webhook 地址，并建议勾选签名校验](/blog/tutorials/feishu/05-webhook.png)
+
+<Callout type="warn">
+安全设置请勾选「签名校验」，不要只开「自定义关键词」。关键词模式下飞书要求消息正文包含指定词，标题里没有关键词的消息会被拒收，而 WPush 侧可能仍显示受理成功。签名由 WPush 按飞书官方算法自动计算，你只需把密钥填进控制台。
+</Callout>
+
+## 2. 在 WPush 控制台绑定
+
+登录 [WPush](https://wpush.cn/)，进入「渠道」页，找到「飞书机器人」，点「配置」：
+
+![WPush 渠道页中的飞书机器人入口](/blog/tutorials/feishu/06-wpush-channels.png)
+
+在「新增 飞书机器人 实例」里填入：
+
+1. **Webhook URL**：上一步复制的地址（形如 `https://open.feishu.cn/open-apis/bot/v2/hook/...`）；
+2. **签名密钥（可选）**：签名校验的密钥；建议填写；
+3. **实例编码 / 备注**：可选。编码用于多群区分，留空则为默认实例 `default`。
+
+![WPush 新增飞书机器人实例表单](/blog/tutorials/feishu/07-wpush-feishu-bind.png)
+
+点「测试」或「保存」。保存前会自动发一条测试消息，只有飞书侧正常响应才会保存生效。群里应立刻收到测试通知。
+
+## 3. 发一条消息验证
+
+```bash
+curl -X POST 'https://api.wpush.cn/api/v1/send' \
+  -d 'apikey=WPUSH_你的APIKey' \
+  -d 'title=渠道测试' \
+  -d 'content=如果你看到这条消息，飞书渠道已接通' \
+  -d 'channel=feishu'
+```
+
+返回消息 ID 即为受理成功：
+
+```json
+{"code":0,"message":"success","data":"1126950958891274240","success":true}
+```
+
+消息以交互卡片形式发到群内，正文支持 Markdown 基础语法。
+
+## 多实例与 option
+
+同一账号可配置多个飞书群，每个实例有自定义**编码**（如 `ops`）。发送时：
+
+- 不带 `option`：投该渠道的默认实例；
+- `option=编码`：投指定实例，例如 `channel=feishu&option=ops`；
+- 可与其他渠道共用同一编码：`channel=dingtalk,feishu&option=ops` 会分别投到两边编码为 `ops` 的群。
+
+```bash
+curl -X POST 'https://api.wpush.cn/api/v1/send' \
+  -d 'apikey=WPUSH_你的APIKey' \
+  -d 'title=数据库主从延迟超过 30s' \
+  -d 'content=实例 **db-prod-01**，当前延迟 42s，请检查 binlog 同步' \
+  -d 'channel=feishu,wechat' \
+  -d 'option=ops'
+```
+
+`option` 不能与主题广播（`topic_code`）同用；编码不存在时返回 422。
+
+## 查询投递结果
+
+用返回的消息 ID 查询：
+
+```bash
+curl -X POST 'https://api.wpush.cn/api/v1/query' \
+  -d 'apikey=WPUSH_你的APIKey' \
+  -d 'id=1126950958891274240'
+```
+
+`status` 为 `0` 处理中、`1` 成功、`2` 失败。
+
+## 常见问题
+
+**测试 / 保存失败。** 核对 Webhook 是否完整、签名密钥是否与飞书「签名校验」一致；未开签名则密钥留空。机器人被移出群或 Webhook 被重置后，需在「渠道」页更新。
+
+**正式消息没进群。** 先看查询接口的 `status`。若开了「自定义关键词」却没用「签名校验」，检查正文是否包含关键词。也可在控制台对该实例再点一次「测试」。
+
+**想区分不同项目。** 为每个项目建独立群和机器人，在 WPush 里用不同实例编码；或统一进一个群，在标题里加项目前缀。
+
+<Callout>
+渠道特性与计费规则见主站的[渠道说明](https://wpush.cn/docs/channels/)，其余渠道的接入步骤见[渠道对接](https://wpush.cn/docs/channel-setup/)。
+</Callout>
