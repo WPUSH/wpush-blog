@@ -16,25 +16,27 @@ import Callout from "@/components/Callout.astro";
 
 ## 1. 在飞书群里创建自定义机器人
 
-打开目标飞书群，进入「设置」，点「群机器人」：
+正确顺序：**群设置 → 群机器人 → 添加机器人 → 自定义机器人 → 设置头像与名称 → 拿到 Webhook**。
 
-![飞书群设置里的「群机器人」入口](/blog/tutorials/feishu/01-group-settings.png)
+打开目标飞书群，进入「群设置」，点「群机器人」：
 
-进入群机器人页后点「添加机器人」：
+![飞书群设置：点「群机器人」](/blog/tutorials/feishu/01-group-settings.png)
 
-![群机器人页：添加机器人](/blog/tutorials/feishu/02-add-bot.png)
+进入后点「添加机器人」：
 
-在列表里选择**自定义机器人**（通过 Webhook 把外部服务消息推到飞书）：
+![群机器人页：点「添加机器人」](/blog/tutorials/feishu/02-add-bot.png)
 
-![添加机器人：选择自定义机器人](/blog/tutorials/feishu/03-pick-custom-bot.png)
+在列表里选择**自定义机器人**：
 
-填写机器人名称与描述（例如「WPUSH消息推送」），点「添加」：
+![选择「自定义机器人」](/blog/tutorials/feishu/03-pick-custom-bot.png)
 
-![填写自定义机器人名称与描述](/blog/tutorials/feishu/04-bot-profile.png)
+设置机器人头像与名称（例如「WPUSH消息推送」），填好描述后点「添加」：
 
-创建成功后会看到 **Webhook 地址**。在「安全设置」里勾选**「签名校验」**，复制密钥；再复制 Webhook 地址，点「完成」。
+![设置机器人头像、名称与描述](/blog/tutorials/feishu/04-bot-profile.png)
 
-![复制 Webhook 地址，并建议勾选签名校验](/blog/tutorials/feishu/05-webhook.png)
+添加成功后才会出现 **Webhook 地址**。在「安全设置」勾选**「签名校验」**并复制密钥，再复制 Webhook 地址，点「完成」：
+
+![复制 Webhook 地址，并勾选签名校验](/blog/tutorials/feishu/05-webhook.png)
 
 <Callout type="warn">
 安全设置请勾选「签名校验」，不要只开「自定义关键词」。关键词模式下飞书要求消息正文包含指定词，标题里没有关键词的消息会被拒收，而 WPush 侧可能仍显示受理成功。签名由 WPush 按飞书官方算法自动计算，你只需把密钥填进控制台。
