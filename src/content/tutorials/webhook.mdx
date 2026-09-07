@@ -1,0 +1,161 @@
+---
+title: "Webhook 接入 WPush：把推送接到你自己的服务"
+description: "配置可公网访问的回调 URL，可选加签密钥，用 curl 验证。说明请求体、响应约定、HMAC 验签与多实例 option，适合告警系统和自动化流程。"
+publishDate: 2026-09-07
+channel: webhook
+difficulty: 入门
+order: 5
+tags: ["Webhook", "渠道接入", "回调"]
+---
+
+import Callout from "@/components/Callout.astro";
+
+Webhook 把消息以 HTTP POST 推到你自己的服务，适合接到现有告警系统、工单流、自动化脚本，或做一层自定义分发。接入后把 `channel` 设为 `webhook`（也可与其他渠道一起发），WPush 会按你配置的 URL 投递。
+
+整个过程：准备端点 → 控制台绑定 → 发一条验证。
+
+## 1. 准备一个可公网访问的端点
+
+需要一个能从公网访问的 HTTP(S) URL。本地开发可用 [webhook.site](https://webhook.site)、cloudflared、ngrok 等临时隧道；生产环境用你自己的服务。
+
+建议端点行为：
+
+- 收到请求后尽快返回 `200`（超时 **3 秒**），耗时逻辑放到异步队列；
+- 用原始请求体做验签（若开启了加签），不要先 `JSON.parse` 再重新 `stringify`。
+
+## 2. 在 WPush 控制台绑定
+
+登录 [WPush](https://wpush.cn/)，进入「渠道」页，找到 Webhook，点「配置」：
+
+![WPush 渠道页中的 Webhook 入口](/blog/tutorials/webhook/01-wpush-channels.png)
+
+在「新增 Webhook 实例」里填入：
+
+1. **Webhook URL**：你的回调地址（`https://...`）；
+2. **签名密钥（可选）**：建议填写，用于验证请求确实来自 WPush（占位文案也称「加签密钥」）；
+3. **实例编码 / 备注**：可选。编码用于多个回调地址，留空则为默认实例 `default`。
+
+![WPush 新增 Webhook 实例表单](/blog/tutorials/webhook/02-wpush-webhook-bind.png)
+
+点「测试」或「保存」。保存前会自动发一条测试消息，只有对端正常响应才会保存生效。
+
+## 3. 发一条消息验证
+
+```bash
+curl -X POST 'https://api.wpush.cn/api/v1/send' \
+  -d 'apikey=WPUSH_你的APIKey' \
+  -d 'title=渠道测试' \
+  -d 'content=如果你的服务收到这条 POST，Webhook 已接通' \
+  -d 'channel=webhook'
+```
+
+返回消息 ID 即为受理成功：
+
+```json
+{"code":0,"message":"success","data":"1126950958891274240","success":true}
+```
+
+### 你会收到的请求
+
+- 方法：`POST`
+- `Content-Type: application/json`
+- `User-Agent: WPUSH/1.0 Http Client`
+- 超时：3 秒
+
+请求体示例：
+
+```json
+{
+  "title": "服务器告警",
+  "content": "CPU 使用率超过 90%",
+  "push_date": "2026-07-08T10:00:00+08:00",
+  "url": "https://example.com/detail",
+  "ip": ""
+}
+```
+
+### 响应约定
+
+| 你的响应 | WPush 行为 |
+| --- | --- |
+| `2xx` | 投递成功 |
+| `5xx` | 按退避重试 |
+| 其他状态码 | 投递失败（不重试） |
+
+## 验证签名（配置了加签密钥时）
+
+每个请求会带两个头：
+
+| Header | 含义 |
+| --- | --- |
+| `X-WPush-Timestamp` | 发送时刻的 Unix 秒 |
+| `X-WPush-Signature` | `hex(HMAC-SHA256(timestamp + "\n" + body, 密钥))` |
+
+签名基于**原始请求体字节**计算。Node.js 示例：
+
+```js
+import crypto from "node:crypto";
+
+// rawBody 为 Buffer（原始请求体），secret 为你配置的加签密钥
+function verifyWPush(headers, rawBody, secret) {
+  const ts = headers["x-wpush-timestamp"];
+  const sig = headers["x-wpush-signature"] ?? "";
+  if (!ts || Math.abs(Date.now() / 1000 - Number(ts)) > 300) return false; // 5 分钟内有效
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(`${ts}\n`)
+    .update(rawBody)
+    .digest("hex");
+  return (
+    sig.length === expected.length &&
+    crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))
+  );
+}
+```
+
+<Callout type="warn">
+验签必须用原始 body。Express / Koa 等框架若中间件先解析了 JSON，需要单独保留 raw body（例如 `express.json({ verify })`），否则签名会对不上。
+</Callout>
+
+## 多实例与 option
+
+同一账号可配置多个 Webhook 地址，每个实例有自定义**编码**（字母、数字、下划线、中划线，1–32 位）。发送时：
+
+- 不带 `option`：投默认实例；
+- `option=编码`：投指定实例，例如 `channel=webhook&option=ops`；
+- 可与钉钉 / 飞书等共用同一编码：`channel=webhook,dingtalk&option=ops`。
+
+```bash
+curl -X POST 'https://api.wpush.cn/api/v1/send' \
+  -d 'apikey=WPUSH_你的APIKey' \
+  -d 'title=部署完成' \
+  -d 'content=生产环境 **api** 已发布' \
+  -d 'channel=webhook' \
+  -d 'option=ops'
+```
+
+`option` 不能与主题广播（`topic_code`）同用；编码不存在时返回 422。实例数上限由套餐决定，在渠道页实例列表底部可见。
+
+## 查询投递结果
+
+```bash
+curl -X POST 'https://api.wpush.cn/api/v1/query' \
+  -d 'apikey=WPUSH_你的APIKey' \
+  -d 'id=1126950958891274240'
+```
+
+`status` 为 `0` 处理中、`1` 成功、`2` 失败。
+
+## 常见问题
+
+**测试失败 / 保存失败。** 确认 URL 公网可达、HTTPS 证书有效，且端点在 3 秒内返回 `2xx`。内网地址或本机 `localhost` 无法从 WPush 访问。
+
+**收得到测试，正式推送却失败。** 用查询接口看 `status`；检查是否偶发超时或非 `2xx`。`5xx` 会重试，`4xx` 等不会。
+
+**签名总是校验失败。** 核对密钥；确认用的是原始 body；检查服务器时间偏差是否超过 5 分钟。
+
+**想同时推到自己的服务和微信。** `channel=webhook,wechat` 一次调用即可。
+
+<Callout>
+渠道特性与计费规则见主站的[渠道说明](https://wpush.cn/docs/channels/)，官方对接说明见[渠道对接 · Webhook](https://wpush.cn/docs/channel-setup/)。
+</Callout>
