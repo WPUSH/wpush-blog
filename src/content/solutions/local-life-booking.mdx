@@ -1,0 +1,112 @@
+---
+title: "到店预约提醒与每日订座汇总：门店运营微信准时收"
+description: "预约提前提醒、潜在爽约风险、每日订座早报用 crontab + WPush 推到微信。附 T-1h 提醒与晨间 digest 的 curl 示例，适合到店商家与门店运营值班。"
+publishDate: 2026-09-07
+scene: 本地生活
+audience: 到店商家 / 门店运营
+tags: ["本地生活", "预约", "到店", "微信", "digest", "开发者"]
+faq:
+  - q: 提醒发给店员还是顾客？
+    a: 本文默认推给店员/店长微信，方便排班与备料。顾客短信需合规与付费评估，谨慎使用 sms 渠道。
+  - q: 每日订座汇总什么时候发合适？
+    a: 多数门店选营业前 1～2 小时，例如 9:00 发当日 digest，便于备货与排班。
+  - q: 没有预约系统能用吗？
+    a: 可以。用表格/简易后台导出当日预约列表即可；有系统时在定时任务里调 WPush。
+---
+
+import Callout from "@/components/Callout.astro";
+
+美业、餐饮、教培体验店等「到店」业态，最怕漏约和扎堆：客人即将到店无人接待，或当天预约密度店员一无所知。用晨间汇总 + 到店前 1 小时提醒，经 WPush 推到店长微信，就能显著降低爽约与翻车概率。
+
+## 准备
+
+1. 注册 WPush，绑定微信（可加钉钉群同步后厨/前台）；
+2. 预约数据来源：收银/预约后台导出，或简易 CSV；
+3. 一台能跑 cron 的小主机或云函数。
+
+## 发送封装
+
+```bash
+#!/usr/bin/env bash
+set -u
+source /etc/wpush.env   # WPUSH_KEY，chmod 600
+
+CHANNELS="wechat"
+
+wpush_send() {
+  curl -sS -X POST 'https://api.wpush.cn/api/v1/send' \
+    --data-urlencode "apikey=${WPUSH_KEY}" \
+    --data-urlencode "title=$1" \
+    --data-urlencode "content=$2" \
+    --data-urlencode "channel=${CHANNELS}"
+}
+```
+
+<Callout type="warn">
+API Key 不要写进可公开仓库或门店共用电脑的明文笔记。用环境变量或权限受限配置文件保存。
+</Callout>
+
+## 每日订座早报（晨间 digest）
+
+```bash
+#!/usr/bin/env bash
+# /usr/local/bin/wpush-booking-digest.sh —— 建议 cron：0 9 * * *
+set -u
+source /etc/wpush.env
+
+# 真实环境：从数据库/API 拉取当日预约
+# 这里用示例文本演示
+DIGEST=$(cat <<'TXT'
+今日预约 **12** 单：
+- 10:00 张女士 · 剪发
+- 11:30 李先生 · 护理（新客）
+- 14:00 王女士 · 染烫
+高峰 14:00–16:00，请确保两位发型师在岗。
+TXT
+)
+
+wpush_send "今日订座汇总" "$DIGEST"
+```
+
+crontab：
+
+```bash
+0 9 * * * root /usr/local/bin/wpush-booking-digest.sh
+```
+
+## 到店前 1 小时提醒（T-1h）
+
+每 10～15 分钟扫一遍「约 1 小时后到店」的预约：
+
+```bash
+#!/usr/bin/env bash
+# /usr/local/bin/wpush-booking-t1h.sh
+set -u
+source /etc/wpush.env
+
+# mock：真实逻辑按 start_time - now ≈ 60min 过滤
+GUEST="张女士"
+SERVICE="剪发"
+AT="10:00"
+
+wpush_send "预约即将到店" \
+  "**${GUEST}** 将于 ${AT} 到店（${SERVICE}）。请确认工位与物料；若多次改约可电话确认降低爽约。"
+```
+
+```bash
+*/15 * * * * root /usr/local/bin/wpush-booking-t1h.sh
+```
+
+爽约风险较高（历史多次 no-show）可在 content 里加粗提示，必要时店员主动电话确认。`sms` 联系顾客属付费且需合规，默认仍建议先通知店内同事。
+
+单条调试：
+
+```bash
+curl -sS -X POST 'https://api.wpush.cn/api/v1/send' \
+  --data-urlencode "apikey=${WPUSH_KEY}" \
+  --data-urlencode "title=预约即将到店" \
+  --data-urlencode "content=张女士 10:00 剪发，请备好工位" \
+  --data-urlencode "channel=wechat"
+```
+
+返回 `code === 0` 即成功。多门店可用 `option` 区分实例，参数以[官方文档](https://wpush.cn/docs/)为准。晨报管全局，T-1h 管现场，到店体验会稳很多。

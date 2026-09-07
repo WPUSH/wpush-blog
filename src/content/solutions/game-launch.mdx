@@ -1,0 +1,100 @@
+---
+title: "游戏开服与维护通知：飞书钉钉微信定时广播"
+description: "开服、紧急维护、限时活动开始用脚本定时推到飞书、钉钉与微信运营值班群。附可运行 shell 宣告脚本、at 与 cron 预约示例，并明确提醒勿用短信骚扰玩家。"
+publishDate: 2026-09-07
+scene: 游戏运营
+audience: 游戏运营 / 独立游戏开发者
+tags: ["游戏", "开服", "维护", "飞书", "钉钉", "开发者"]
+faq:
+  - q: 开服通知应该推给玩家还是运营？
+    a: 本文面向运营与研发值班群（飞书/钉钉/微信）。对玩家端推送应走游戏内邮件/公告系统，不要用短信群发骚扰。
+  - q: 如何避免维护通知刷屏？
+    a: 维护开始、结束各推一条即可；定时宣告用 at 或 sleep 到点执行，不要每分钟重发同一内容。
+  - q: 多区服怎么区分？
+    a: title/content 写明区服名；多实例账号可用 option 传实例码，详见官方文档。
+---
+
+import Callout from "@/components/Callout.astro";
+
+独立游戏与小团队发行，开服倒计时、紧急维护、限时活动开始，都需要运营群第一时间对齐。不必接复杂运维平台：到点执行一条脚本，经 WPush 推到飞书、钉钉和微信即可。
+
+## 准备
+
+1. 注册 WPush，绑定微信；钉钉、飞书分别参考[钉钉教程](/blog/tutorials/dingtalk/)与[飞书教程](/blog/tutorials/feishu/)；
+2. 准备发布日历（开服时间、维护窗口、活动点）；
+3. 有 `curl` 的跳板机或 CI runner。
+
+## 发送函数
+
+```bash
+#!/usr/bin/env bash
+set -u
+source /etc/wpush.env
+
+# 运营值班：飞书 + 钉钉 + 微信
+CHANNELS="feishu,dingtalk,wechat"
+
+announce() {
+  local title="$1" content="$2"
+  curl -sS -X POST 'https://api.wpush.cn/api/v1/send' \
+    --data-urlencode "apikey=${WPUSH_KEY}" \
+    --data-urlencode "title=${title}" \
+    --data-urlencode "content=${content}" \
+    --data-urlencode "channel=${CHANNELS}"
+}
+```
+
+<Callout type="warn">
+API Key 勿提交仓库。用环境变量或 `/etc/wpush.env`（chmod 600）注入。也请勿用 `sms` 对玩家群发开服短信，易被投诉且费用高。
+</Callout>
+
+## 定时宣告脚本
+
+到点开服（可用 `at` 或 crontab）：
+
+```bash
+#!/usr/bin/env bash
+# /usr/local/bin/wpush-game-announce.sh open|maint_start|maint_end|event
+set -u
+source /etc/wpush.env
+source /usr/local/bin/wpush-game-lib.sh  # 含 announce
+
+ZONE="${ZONE:-正式一区}"
+case "${1:-}" in
+  open)
+    announce "开服通知 · ${ZONE}" \
+      "**${ZONE}** 已开放登录，请值班确认登录队列、支付与聊天服状态。"
+    ;;
+  maint_start)
+    announce "维护开始 · ${ZONE}" \
+      "**${ZONE}** 进入维护，预计 90 分钟。请关闭入口并同步客服话术。"
+    ;;
+  maint_end)
+    announce "维护结束 · ${ZONE}" \
+      "**${ZONE}** 维护完成，已重新开服，请抽检关键玩法。"
+    ;;
+  event)
+    announce "活动开始 · ${ZONE}" \
+      "限时活动已开启，请关注活动页与兑换商城是否正常。"
+    ;;
+  *)
+    echo "usage: $0 open|maint_start|maint_end|event" >&2
+    exit 1
+    ;;
+esac
+```
+
+用 `at` 预约开服时刻：
+
+```bash
+echo '/usr/local/bin/wpush-game-announce.sh open' | at 20:00
+```
+
+或 crontab 固定维护窗口：
+
+```bash
+0 4 * * 3 root /usr/local/bin/wpush-game-announce.sh maint_start
+30 5 * * 3 root /usr/local/bin/wpush-game-announce.sh maint_end
+```
+
+成功响应里 `code === 0`。玩家侧公告仍走游戏内系统；WPush 负责让运营群同步，而不是替代游戏推送通道。参数说明见[官方文档](https://wpush.cn/docs/)。

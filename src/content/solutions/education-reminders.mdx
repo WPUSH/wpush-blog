@@ -1,0 +1,87 @@
+---
+title: "教培机构开课与作业提醒：班主任微信飞书准时收到"
+description: "开课提醒、作业截止、学费到期用 crontab + WPush 自动推送。教职工优先走微信与飞书渠道，短信仅作可选付费兜底，附完整 curl、排课过滤与定时示例。"
+publishDate: 2026-09-07
+scene: 教育培训
+audience: 教培机构运营 / 班主任
+tags: ["教培", "开课提醒", "作业", "飞书", "微信", "开发者"]
+faq:
+  - q: 开课提醒适合推给谁？
+    a: 班主任与教务优先用微信或飞书；面向家长的短信渠道按量计费，建议只用于关键缴费等少数场景。
+  - q: 怎么按班级区分推送？
+    a: 可用 topic_code 做主题订阅，或在 content 里写明班级；多校区可用 option 传实例码。
+  - q: 必须自己写课表系统吗？
+    a: 不必。示例用 CSV/简单数组驱动 cron；有现成教务系统时，在其定时任务里调 WPush 即可。
+---
+
+import Callout from "@/components/Callout.astro";
+
+教培机构日常通知密集：明天开课、作业今晚截止、学费还有三天到期。群消息容易沉底，班主任又不可能 24 小时盯表。用 crontab 定时调用 WPush，把提醒送到微信和飞书，教务与班主任都能准时看到。
+
+## 准备
+
+1. 注册 WPush，绑定微信；飞书机器人参考[飞书群机器人接入教程](/blog/tutorials/feishu/)；
+2. 准备课表或提醒清单（CSV / 数据库均可）；
+3. 服务器有 `curl`。
+
+## 通用发送
+
+```bash
+#!/usr/bin/env bash
+set -u
+source /etc/wpush.env   # WPUSH_KEY
+
+# 教职工：微信 + 飞书（推荐）
+CHANNELS_STAFF="wechat,feishu"
+
+wpush_send() {
+  local title="$1" content="$2" channel="${3:-$CHANNELS_STAFF}"
+  curl -sS -X POST 'https://api.wpush.cn/api/v1/send' \
+    --data-urlencode "apikey=${WPUSH_KEY}" \
+    --data-urlencode "title=${title}" \
+    --data-urlencode "content=${content}" \
+    --data-urlencode "channel=${channel}"
+}
+```
+
+<Callout type="warn">
+不要把 API Key 写进仓库或学员可见的脚本。用环境变量或权限 600 的配置文件注入。
+</Callout>
+
+## 开课提醒（上课前 1 小时）
+
+假设 cron 每小时跑一次，根据课表过滤「下一小时开课」的条目：
+
+```bash
+# 示例：硬编码一条课表，真实环境从文件/API 读取
+CLASS_NAME="少儿编程 A 班"
+START_AT="19:00"
+ROOM="302"
+
+wpush_send "开课提醒 · ${CLASS_NAME}" \
+  "今日 **${START_AT}** 在 ${ROOM} 开课，请班主任提前到场并核对签到。"
+```
+
+crontab 示例（每天 18:00 推「19:00 开课」）：
+
+```bash
+0 18 * * * root /usr/local/bin/wpush-class-remind.sh
+```
+
+## 作业截止与缴费到期
+
+```bash
+# 作业截止日当天早上
+wpush_send "作业截止提醒" \
+  "**少儿编程 A 班** 作业今晚 21:00 截止，请催收未交学员。"
+
+# 学费到期（教职工渠道）
+wpush_send "学费到期提醒" \
+  "学员张三学费将于 3 天后到期，请班主任跟进续费沟通。"
+```
+
+## 关于短信
+
+`sms` 渠道可用于家长触达，但是**付费按量计费**，且需遵守运营商与隐私规范。教培内部协作请优先 `wechat` / `feishu`；仅在关键缴费、紧急停课时再考虑短信，并控制频次。完整参数见[官方文档](https://wpush.cn/docs/)。
+
+返回 JSON 中 `code === 0` 即发送成功。把课表驱动接上之后，开课、作业、缴费三条线都能自动跑起来。

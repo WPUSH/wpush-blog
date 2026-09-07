@@ -1,0 +1,124 @@
+---
+title: "电商订单异常与库存告警：微信+钉钉同时收到"
+description: "订单状态异常、库存跌破阈值、物流发货超时别再靠人工盯后台。用一段 Python 脚本定时检查 mock 或真实接口，WPush 一次调用同步推到微信和钉钉，附完整示例与冷却思路。"
+publishDate: 2026-09-07
+scene: 电商运营
+audience: 电商运营 / 独立站卖家
+tags: ["电商", "订单告警", "库存", "微信", "钉钉", "开发者"]
+faq:
+  - q: 订单异常需要对接哪些电商后台 API？
+    a: 不强制。示例用本地 mock 数据演示逻辑；接入时把拉取函数换成你平台的订单/库存接口即可，WPush 只负责推送。
+  - q: 可以同时推到微信和钉钉吗？
+    a: 可以。channel 写成 wechat,dingtalk，一次 POST 就会同时投递到两个渠道。
+  - q: 库存告警会不会每分钟刷屏？
+    a: 建议加冷却期或「已告警」标记，同一 SKU 在冷却内只推一次，补货后再清标记。
+---
+
+import Callout from "@/components/Callout.astro";
+
+电商运营最怕两件事：爆单后库存悄悄见底，以及异常订单（退款失败、物流停滞）堆在后台没人看。专门上一套 OMS 告警对小团队过重，用定时脚本加 WPush 就能把关键异常推到微信和钉钉。
+
+## 准备
+
+1. 注册 WPush，在「设置」页拿到 API Key；
+2. 绑定微信；钉钉群机器人参考[钉钉群机器人接入教程](/blog/tutorials/dingtalk/)；
+3. 本机有 Python 3 与 `requests`（或改用 `curl`）。
+
+## 发送封装
+
+```python
+#!/usr/bin/env python3
+import os
+import requests
+
+WPUSH_KEY = os.environ["WPUSH_KEY"]  # 勿硬编码进仓库
+CHANNELS = "wechat,dingtalk"
+API = "https://api.wpush.cn/api/v1/send"
+
+def notify(title: str, content: str) -> None:
+    r = requests.post(
+        API,
+        data={
+            "apikey": WPUSH_KEY,
+            "title": title,
+            "content": content,
+            "channel": CHANNELS,
+        },
+        timeout=10,
+    )
+    r.raise_for_status()
+    body = r.json()
+    if body.get("code") != 0:
+        raise RuntimeError(f"WPush 失败: {body}")
+```
+
+<Callout type="warn">
+API Key 不要写进会提交到仓库的脚本。用环境变量或 `/etc/wpush.env`（权限 600）注入，避免密钥泄露。
+</Callout>
+
+## 模拟检查：订单异常与低库存
+
+下面用 mock 数据演示；上线时把 `fetch_*` 换成真实接口。
+
+```python
+# mock：真实环境改为请求电商后台 / ERP
+MOCK_ORDERS = [
+    {"id": "O1001", "status": "paid", "shipped_hours": 2},
+    {"id": "O1002", "status": "paid", "shipped_hours": 52},  # 超时未发货
+    {"id": "O1003", "status": "refund_stuck", "shipped_hours": 0},
+]
+MOCK_STOCK = [
+    {"sku": "SKU-A", "name": "爆款卫衣", "qty": 3},
+    {"sku": "SKU-B", "name": "基础T恤", "qty": 80},
+]
+
+SHIP_DELAY_HOURS = 48
+STOCK_THRESHOLD = 5
+
+def check_orders() -> None:
+    for o in MOCK_ORDERS:
+        if o["status"] == "refund_stuck":
+            notify("订单异常 · 退款卡住", f"订单 **{o['id']}** 退款状态异常，请尽快处理")
+        elif o["status"] == "paid" and o["shipped_hours"] >= SHIP_DELAY_HOURS:
+            notify(
+                "发货超时",
+                f"订单 **{o['id']}** 已付款 {o['shipped_hours']} 小时仍未发货（阈值 {SHIP_DELAY_HOURS}h）",
+            )
+
+def check_stock() -> None:
+    for s in MOCK_STOCK:
+        if s["qty"] < STOCK_THRESHOLD:
+            notify(
+                "库存告警",
+                f"**{s['name']}**（{s['sku']}）剩余 {s['qty']}，低于阈值 {STOCK_THRESHOLD}",
+            )
+
+if __name__ == "__main__":
+    check_orders()
+    check_stock()
+```
+
+等价的 shell 单条推送（方便排查）：
+
+```bash
+curl -sS -X POST 'https://api.wpush.cn/api/v1/send' \
+  --data-urlencode "apikey=${WPUSH_KEY}" \
+  --data-urlencode "title=库存告警" \
+  --data-urlencode "content=SKU-A 剩余 3，低于阈值 5" \
+  --data-urlencode "channel=wechat,dingtalk"
+```
+
+返回 JSON 中 `code === 0` 表示成功。
+
+## 定时跑起来
+
+```bash
+# 每 10 分钟检查一次
+*/10 * * * * WPUSH_KEY=你的Key /usr/bin/python3 /opt/wpush/ecommerce_check.py
+```
+
+多店铺可用 `option` 传实例码区分账号，详见[官方文档](https://wpush.cn/docs/)。
+
+## 效果
+
+异常订单与低库存会同时出现在微信模板消息和钉钉群；运营可第一时间补货或催发货，不必反复刷后台。

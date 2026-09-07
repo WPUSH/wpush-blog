@@ -1,0 +1,92 @@
+---
+title: "跨境独立站监控：宕机、结账失败与广告花费飙升通知"
+description: "独立站宕机、结账报错、广告花费异常时立刻推到微信。用 curl 健康检查加 crontab，必要时配合 Webhook 接收端，十分钟搭好跨境卖家值班通知链路。"
+publishDate: 2026-09-07
+scene: 跨境独立站
+audience: 跨境卖家 / 独立开发者
+tags: ["独立站", "uptime", "健康检查", "webhook", "微信", "开发者"]
+faq:
+  - q: 和专门的 Uptime 监控有什么区别？
+    a: 轻量场景用 curl + crontab 足够。已有 Uptime Kuma 等工具时，把 Webhook 转发到 WPush 即可，不必重复造轮子。
+  - q: 结账错误怎么采集？
+    a: 可在结账失败回调或应用日志里调 WPush；也可用站点 Webhook 接收端统一转发，参见 Webhook 教程。
+  - q: 广告花费告警数据从哪来？
+    a: 从广告平台 API 拉昨日/近小时花费，与预算阈值比较后调用 WPush；示例只演示推送侧。
+---
+
+import Callout from "@/components/Callout.astro";
+
+跨境独立站往往是「一个人扛运维」：站点挂了、结账页 500、广告花费突然翻倍，都需要马上知道。不必上完整 APM，一段健康检查脚本加 WPush，就能把关键信号推到微信（可叠加钉钉群）。
+
+更偏服务器指标的磁盘/内存告警，可参考[服务器告警方案](/blog/solutions/server-alert/)。
+
+## 准备
+
+1. 注册 WPush，拿到 API Key，绑定微信；
+2. 可选：按[Webhook 渠道教程](/blog/tutorials/webhook/)配置自定义 Webhook，便于接收第三方回调再转发；
+3. 机器上有 `curl` 与 crontab。
+
+## 站点存活检查
+
+```bash
+#!/usr/bin/env bash
+set -u
+
+# shellcheck source=/dev/null
+source /etc/wpush.env   # 内含 WPUSH_KEY，权限 600
+SITE_URL="${SITE_URL:-https://www.example.com/}"
+CHANNELS="wechat,dingtalk"
+STATE=/var/tmp/wpush-site-down
+
+notify() {
+  curl -sS -X POST 'https://api.wpush.cn/api/v1/send' \
+    --data-urlencode "apikey=${WPUSH_KEY}" \
+    --data-urlencode "title=$1" \
+    --data-urlencode "content=$2" \
+    --data-urlencode "channel=${CHANNELS}" >/dev/null
+}
+
+code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$SITE_URL" || echo 000)
+
+if [ "$code" != "200" ] && [ "$code" != "301" ] && [ "$code" != "302" ]; then
+  if [ ! -f "$STATE" ]; then
+    notify "独立站宕机" "检测 **${SITE_URL}** 返回 ${code}，请立即排查"
+    date +%s > "$STATE"
+  fi
+else
+  if [ -f "$STATE" ]; then
+    notify "独立站恢复" "**${SITE_URL}** 已恢复正常（HTTP ${code}）"
+    rm -f "$STATE"
+  fi
+fi
+```
+
+<Callout type="warn">
+API Key 不要提交到 Git。放到 `/etc/wpush.env` 并用 `chmod 600`，脚本里 `source` 即可。
+</Callout>
+
+## 结账错误与广告花费
+
+结账失败可在应用侧直接推送：
+
+```bash
+curl -sS -X POST 'https://api.wpush.cn/api/v1/send' \
+  --data-urlencode "apikey=${WPUSH_KEY}" \
+  --data-urlencode "title=结账异常" \
+  --data-urlencode "content=checkout 接口 5xx 激增，订单可能丢失，请查支付网关与日志" \
+  --data-urlencode "channel=wechat,dingtalk"
+```
+
+广告花费可用定时脚本拉平台 API，超过日预算百分比时再调同一接口。多店铺可用 `option` 传实例码区分。
+
+## 可选：Webhook 接收端
+
+若广告平台、支付网关只支持「往你的 URL POST」，可自建一个小接收服务，校验后转发到 WPush。WPush 自身的 `webhook` 渠道是「WPush → 你的 URL」，方向相反，接入细节见[Webhook 教程](/blog/tutorials/webhook/)。完整参数以[官方文档](https://wpush.cn/docs/)为准。
+
+## 定时
+
+```bash
+echo '*/2 * * * * root /usr/local/bin/wpush-site-check.sh' > /etc/cron.d/wpush-site
+```
+
+成功时接口返回 JSON 且 `code === 0`。宕机有告警、恢复有提醒，跨境卖家也能睡个安稳觉。

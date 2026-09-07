@@ -4,7 +4,7 @@ description: "不部署监控平台也能收到服务器告警。用 shell 脚�
 publishDate: 2026-09-07
 scene: 服务器告警
 audience: 运维 / 独立开发者
-tags: ["服务器告警", "crontab", "微信", "钉钉"]
+tags: ["服务器告警", "crontab", "微信", "钉钉", "开发者"]
 faq:
   - q: 一定要部署 Prometheus 或 Zabbix 才能用 WPush 发告警吗？
     a: 不需要。任何能发 HTTP 请求的地方都可以调用 WPush，一段 shell 脚本配 crontab 就够用。已有监控平台的话，把它的 Webhook 通知指向 WPush 即可。

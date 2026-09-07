@@ -1,0 +1,112 @@
+---
+title: "量化交易价格与回撤告警：微信钉钉实时提醒"
+description: "价格突破、策略权益回撤超阈值、交易所 API 报错时推送到微信和钉钉。附 Python 占位行情检查与 curl 探测完整示例，仅供技术演示，不构成任何投资建议。"
+publishDate: 2026-09-07
+scene: 量化交易
+audience: 量化交易者 / 独立研究员
+tags: ["量化", "价格告警", "回撤", "微信", "钉钉", "开发者"]
+faq:
+  - q: 这套脚本能直接实盘下单吗？
+    a: 不能，也不应。示例只演示行情阈值与推送，不包含下单逻辑；实盘请使用你自己的风控与券商/交易所接口。
+  - q: 为什么选微信和钉钉？
+    a: 个人看盘用微信方便，团队策略室用钉钉群同步；channel 写成 wechat,dingtalk 一次投递。
+  - q: 交易所报错怎么接入？
+    a: 在 API 客户端的异常分支调用同一 notify 函数即可，把错误码与请求 ID 写进 content。
+---
+
+import Callout from "@/components/Callout.astro";
+
+量化与个人研究者常需要「价格破位通知我」「策略回撤超阈值」「交易所连不上」。监控可以很轻：本地或云主机跑一小段 Python，条件触发后经 WPush 推到微信和钉钉。
+
+<Callout type="warn">
+本文仅为技术示例，**不构成投资建议**，不保证收益，请勿据此交易。API Key 不要写入会提交的仓库，使用环境变量注入。
+</Callout>
+
+## 发送封装
+
+```python
+#!/usr/bin/env python3
+"""示例代码：占位行情 + WPush 通知。非投资建议。"""
+import os
+import time
+import requests
+
+WPUSH_KEY = os.environ["WPUSH_KEY"]
+CHANNELS = "wechat,dingtalk"
+API = "https://api.wpush.cn/api/v1/send"
+
+def notify(title: str, content: str) -> None:
+    r = requests.post(
+        API,
+        data={
+            "apikey": WPUSH_KEY,
+            "title": title,
+            "content": content,
+            "channel": CHANNELS,
+        },
+        timeout=10,
+    )
+    r.raise_for_status()
+    data = r.json()
+    if data.get("code") != 0:
+        raise RuntimeError(data)
+```
+
+## 占位：价格突破检查
+
+把 `fetch_price` 换成你的行情源（交易所 REST/WebSocket）。下面用固定假数据演示阈值逻辑：
+
+```python
+def fetch_price(symbol: str) -> float:
+    # TODO: 替换为真实行情 API
+    # 示例占位
+    return {"BTCUSDT": 64250.0, "ETHUSDT": 2450.0}[symbol]
+
+def check_price_alerts() -> None:
+    rules = [
+        ("BTCUSDT", "above", 65000.0),
+        ("ETHUSDT", "below", 2400.0),
+    ]
+    for symbol, op, level in rules:
+        try:
+            px = fetch_price(symbol)
+        except Exception as e:
+            notify("行情源异常", f"拉取 {symbol} 失败：{e}")
+            continue
+        hit = (op == "above" and px >= level) or (op == "below" and px <= level)
+        if hit:
+            notify(
+                f"价格告警 · {symbol}",
+                f"最新价 **{px}**，触发条件 {op} {level}",
+            )
+
+def check_drawdown(equity: float, peak: float, max_dd: float = 0.08) -> None:
+    if peak <= 0:
+        return
+    dd = 1.0 - equity / peak
+    if dd >= max_dd:
+        notify(
+            "策略回撤告警",
+            f"当前权益 {equity:.2f}，峰值 {peak:.2f}，回撤 {dd:.2%}（阈值 {max_dd:.0%}）",
+        )
+
+def check_exchange_error(exc: BaseException) -> None:
+    notify("交易所 API 错误", f"{type(exc).__name__}: {exc}")
+
+if __name__ == "__main__":
+    check_price_alerts()
+    # 示例回撤：用你的实盘权益曲线替换
+    check_drawdown(equity=92000.0, peak=100000.0, max_dd=0.08)
+```
+
+等价 curl 探测：
+
+```bash
+curl -sS -X POST 'https://api.wpush.cn/api/v1/send' \
+  --data-urlencode "apikey=${WPUSH_KEY}" \
+  --data-urlencode "title=价格告警 · BTCUSDT" \
+  --data-urlencode "content=最新价突破阈值，请人工确认" \
+  --data-urlencode "channel=wechat,dingtalk"
+```
+
+`code === 0` 表示成功。多账户可用 `option` 传实例码。完整接口见[官方文档](https://wpush.cn/docs/)。再次强调：以上仅为通知链路演示，不是交易系统，也不是投资建议。
