@@ -1,0 +1,103 @@
+---
+title: "宝塔面板接入 WPush：把面板告警推到微信、钉钉、飞书"
+description: "在宝塔「告警通知 → 自定义消息通道」里配置 WPUSH，用面板原生告警把 CPU、磁盘、证书等到期等通知一键推到你已绑定的渠道。含完整字段表、变量说明与测试步骤。"
+publishDate: 2026-09-22
+difficulty: 入门
+order: 40
+tags: ["宝塔", "面板告警", "运维", "Webhook"]
+---
+
+import Callout from "@/components/Callout.astro";
+
+宝塔（BT / Pagoda）面板自带告警模块，但默认渠道有限。用「自定义消息通道」把告警 POST 到 WPush，就能复用你已绑定的微信、钉钉、飞书、企微等渠道，不必再为每个面板单独配一套机器人。
+
+整个过程：拿 API Key → 宝塔里加自定义通道 → 点「测试」验证。菜单文案以宝塔当前界面为准。
+
+## 准备
+
+1. 注册并登录 [WPush](https://wpush.cn/)，在「设置」页复制 API Key；
+2. 在「渠道」页至少绑定一个渠道（例如微信扫码）。钉钉、飞书可参考：
+   - [钉钉群机器人接入](/blog/tutorials/dingtalk/)
+   - [飞书群机器人接入](/blog/tutorials/feishu/)
+3. 服务器已安装宝塔面板，并能打开「面板设置」。
+
+<Callout type="tip">
+自定义通道里如果不写 `channel`，WPush 默认走 `wechat`。要同时推钉钉、飞书等，在自定义参数 JSON 里加上 `"channel":"wechat,dingtalk,feishu"` 即可。
+</Callout>
+
+## 1. 打开自定义消息通道
+
+登录宝塔面板，左侧点「设置」，顶栏切到「告警通知」，再选「告警设置」。
+
+在列表底部找到「自定义消息通道」，点右侧「配置」：
+
+![宝塔告警设置：自定义消息通道入口](/blog/tutorials/baota/01-alert-settings.png)
+
+## 2. 添加 WPUSH 通道
+
+在弹出的「自定义消息通道配置」窗口点「添加」，按下面填表：
+
+| 字段 | 填写 |
+| --- | --- |
+| 名称 | `WPUSH`（可自定，便于识别即可） |
+| URL | `https://api.wpush.cn/api/v1/send` |
+| 请求方式 | `POST` |
+| 参数格式 | `application/json` |
+| 证书校验 | `开启` |
+| 自定义参数 | 见下方 JSON |
+| 请求头 | 可留空 |
+
+自定义参数（把 `你的WPUSH的APIKEY` 换成真实 Key）：
+
+```json
+{
+  "apikey": "你的WPUSH的APIKEY",
+  "title": "$title",
+  "content": "$msg"
+}
+```
+
+`$title`、`$msg` 是宝塔内置变量：告警触发时会替换成实际标题与正文。
+
+![填写名称、URL、POST 与自定义参数](/blog/tutorials/baota/03-channel-form.png)
+
+<Callout type="warn">
+JSON 里 `apikey` 那一行末尾必须有逗号，否则宝塔可能保存失败或请求体非法。API Key 不要截图外传，也不要提交到公开仓库。
+</Callout>
+
+需要指定渠道时，在自定义参数里追加一行，例如：
+
+```json
+{
+  "apikey": "你的WPUSH的APIKEY",
+  "title": "$title",
+  "content": "$msg",
+  "channel": "wechat,dingtalk"
+}
+```
+
+填完点「确定」保存。
+
+## 3. 启用并测试
+
+保存后，列表里应出现名为 WPUSH 的通道，状态为「已启用」。可点「设置默认」，让面板告警优先走这条通道；再点「测试」发一条探测消息：
+
+![自定义通道列表：WPUSH 已启用，可测试](/blog/tutorials/baota/02-channel-list.png)
+
+测试成功后，你在 WPush 已绑定的渠道（默认微信）应立刻收到通知。回到「告警设置」主列表，确认各告警模块（CPU、内存、磁盘、证书到期等）已按需开启；触发真实告警时，就会经 WPUSH 推出去。
+
+## 收不到消息时
+
+| 现象 | 排查 |
+| --- | --- |
+| 测试无反应 | 核对 URL 是否为 `https://api.wpush.cn/api/v1/send`，请求方式是否为 POST，参数格式是否为 `application/json` |
+| 面板提示参数错误 | 检查自定义参数是否为合法 JSON（逗号、引号）；`$title` / `$msg` 不要改成别的变量名 |
+| WPush 返回鉴权失败 | API Key 是否完整、是否有多余空格；到控制台「设置」页重新复制 |
+| 有受理成功但手机没收到 | 控制台对应渠道是否已绑定；未写 `channel` 时默认走微信，确认微信已扫码绑定 |
+| 只想推某个群 / 某个实例 | 在 JSON 增加 `"option":"实例编码"`（需与控制台该渠道的实例编码一致，不可与主题广播同用） |
+
+需要核对投递结果时，可用消息 ID 调 `POST /api/v1/query`（与[飞书接入教程](/blog/tutorials/feishu/)相同）。
+
+## 和脚本告警的关系
+
+面板告警适合宝塔已覆盖的指标。若还要监控进程存活、业务接口等，可另写 shell + crontab，直接调同一套发送接口，见[服务器告警解决方案](/blog/solutions/server-alert/)。两条链路可以共用同一个 API Key 与渠道配置。
